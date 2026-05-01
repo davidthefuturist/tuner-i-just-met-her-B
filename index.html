@@ -229,7 +229,7 @@ git subtree push --prefix web public main
                             document.getElementById('latAvg').innerText = parts[3];
                             document.getElementById('latCount').innerText = parts[4];
 
-                            // Helper: convert microseconds since Unix epoch to "YYYY-MM-DD HH:MM:SS.uuuuuu UTC"
+                            // Helper: convert microseconds since Unix epoch to "YYYY-MM-DD HH:MM:SS.uuuuuu "
                             // Showing all 6 microsecond digits makes the unit unambiguous on inspection.
                             const pad = (n, w=2) => String(n).padStart(w, '0');
                             const formatEpochUs = (epochUs) => {
@@ -238,7 +238,7 @@ git subtree push --prefix web public main
                                 const d = new Date(ms);
                                 return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ` +
                                        `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}` +
-                                       `.${String(usFraction).padStart(6, '0')} UTC`;
+                                       `.${String(usFraction).padStart(6, '0')}`;
                             };
 
                             // Δ in µs (parts[5])
