@@ -5,7 +5,7 @@
 SAVE THEN:
 
 git add web
-git commit -m "Whooops. Gotta push here too"
+git commit -m "verbose timestamps to t0 and t2 in web interface"
 git subtree push --prefix web public main 
 
 -->
@@ -64,6 +64,27 @@ git subtree push --prefix web public main
             <div class="diag-item">Raw Throttle: <span id="remThrot" class="diag-val">0</span></div>
             <div class="diag-item">Trigger (Deadman): <span id="remTrig" class="diag-val">OPEN</span></div>
             <div class="diag-item">Main Button: <span id="remBtn" class="diag-val">OPEN</span></div>
+        </div>
+
+        <div id="latencyDiag" class="diag-box" style="display:none;">
+            <h3>BLE → CAN Latency (microseconds)</h3>
+            <div class="diag-item" style="flex-direction:column; align-items:flex-start; border-bottom:1px solid #333; padding-bottom:8px; margin-bottom:8px;">
+                <span style="color:#888; font-size:11px;">Δ (last sample):</span>
+                <span class="diag-val" id="latDelta" style="font-size:13px; color:#ffff44;">-- µs</span>
+                <span style="color:#888; font-size:11px; margin-top:6px;">t0 (BLE arrival):</span>
+                <span class="diag-val" id="latT0Wall" style="font-size:11px; color:#ffff44;">--</span>
+                <span style="color:#888; font-size:11px; margin-top:6px;">t2 (CAN dispatch):</span>
+                <span class="diag-val" id="latT2Wall" style="font-size:11px; color:#ffff44;">--</span>
+            </div>
+            <div class="diag-item" style="flex-direction:column; align-items:flex-start; border-bottom:1px solid #333; padding-bottom:8px; margin-bottom:8px;">
+                <span style="color:#888; font-size:11px;">Wall-Clock (UTC):</span>
+                <span class="diag-val" id="latWallClock" style="font-size:12px; color:#ffff44;">--</span>
+            </div>
+            <div class="diag-item">Min: (µs) <span id="latMin" class="diag-val">-- </span></div>
+            <div class="diag-item">Max: (µs) <span id="latMax" class="diag-val" style="color:#ff8844;">--</span></div>
+            <div class="diag-item">Avg: (µs) <span id="latAvg" class="diag-val" style="color:#44bbff;">--</span></div>
+            <div class="diag-item">Samples: <span id="latCount" class="diag-val">0</span></div>
+            <button class="btn" id="latResetBtn" style="background:#444; color:#fff; margin-top:10px;">RESET STATS</button>
         </div>
 
         <div id="telemetry" style="display:none; overflow-x: auto;">
@@ -159,6 +180,49 @@ git subtree push --prefix web public main
                             return;
                         }
 
+                        if (report.startsWith('L:')) {
+                            const parts = report.split(':');
+                            document.getElementById('latMin').innerText = parts[1];
+                            document.getElementById('latMax').innerText = parts[2];
+                            document.getElementById('latAvg').innerText = parts[3];
+                            document.getElementById('latCount').innerText = parts[4];
+
+                            // Helper: convert microseconds since Unix epoch to "YYYY-MM-DD HH:MM:SS.uuuuuu UTC"
+                            // Showing all 6 microsecond digits makes the unit unambiguous on inspection.
+                            const pad = (n, w=2) => String(n).padStart(w, '0');
+                            const formatEpochUs = (epochUs) => {
+                                const ms = Math.floor(epochUs / 1000);
+                                const usFraction = ((epochUs % 1000000) + 1000000) % 1000000;
+                                const d = new Date(ms);
+                                return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ` +
+                                       `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}` +
+                                       `.${String(usFraction).padStart(6, '0')} UTC`;
+                            };
+
+                            // Δ in µs (parts[5])
+                            if (parts.length >= 6) {
+                                document.getElementById('latDelta').innerText = `${parts[5]} µs`;
+                            }
+                            // Wall-clock now (parts[8] = sec, parts[9] = usec)
+                            if (parts.length >= 10) {
+                                const wallSec = parseInt(parts[8], 10);
+                                const wallUsec = parseInt(parts[9], 10);
+                                const d = new Date(wallSec * 1000);
+                                const ms = pad(Math.floor(wallUsec / 1000), 3);
+                                document.getElementById('latWallClock').innerText =
+                                    `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ` +
+                                    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${ms} UTC`;
+                            }
+                            // t0 / t2 wall-clock (parts[10], parts[11]) — JS Number is fine: epoch µs ≈ 1.78e15, well below 2^53
+                            if (parts.length >= 12) {
+                                const t0Us = parseInt(parts[10], 10);
+                                const t2Us = parseInt(parts[11], 10);
+                                document.getElementById('latT0Wall').innerText = formatEpochUs(t0Us);
+                                document.getElementById('latT2Wall').innerText = formatEpochUs(t2Us);
+                            }
+                            return;
+                        }
+
                         if (report.startsWith('V')) {
                             const parts = report.split(':');
                             const id = parts[0].substring(1);
@@ -185,8 +249,13 @@ git subtree push --prefix web public main
                 document.getElementById('status').className = "status connected";
                 document.getElementById('connectBtn').style.display = "none";
                 document.getElementById('remoteDiag').style.display = "block";
+                document.getElementById('latencyDiag').style.display = "block";
                 document.getElementById('controls').style.display = "block";
                 document.getElementById('telemetry').style.display = "block";
+
+                // Sync ESP32's wall clock to the browser's current Unix time (UTC seconds)
+                const nowUnixSec = Math.floor(Date.now() / 1000);
+                send('TIME', nowUnixSec);
 
             } catch (e) { 
                 console.error(e);
@@ -222,6 +291,8 @@ git subtree push --prefix web public main
             document.getElementById('driveIn').value = 0; 
             send('DRIVE', 0); 
         });
+
+        document.getElementById('latResetBtn').addEventListener('click', () => send('LRST', 0));
     </script>
 </body>
 </html>
