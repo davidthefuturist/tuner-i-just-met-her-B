@@ -327,19 +327,19 @@ git subtree push --prefix web public main
                 send('TIME', nowUnixSec);
 
                 // --- START GPS TRACKING ---
-                if ('geolocation' in navigator) {
-                    navigator.geolocation.watchPosition(
-                        (pos) => {
-                            currentLat = pos.coords.latitude.toFixed(6);
-                            currentLon = pos.coords.longitude.toFixed(6);
-                            currentAlt = pos.coords.altitude ? pos.coords.altitude.toFixed(2) : '';
-                        },
-                        (err) => console.warn("GPS Error: ", err.message),
-                        { enableHighAccuracy: true, maximumAge: 2000 }
-                    );
-                } else {
-                    console.warn("Geolocation is not supported by this browser.");
-                }
+                // if ('geolocation' in navigator) {
+                //     navigator.geolocation.watchPosition(
+                //         (pos) => {
+                //             currentLat = pos.coords.latitude.toFixed(6);
+                //             currentLon = pos.coords.longitude.toFixed(6);
+                //             currentAlt = pos.coords.altitude ? pos.coords.altitude.toFixed(2) : '';
+                //         },
+                //         (err) => console.warn("GPS Error: ", err.message),
+                //         { enableHighAccuracy: true, maximumAge: 2000 }
+                //     );
+                // } else {
+                //     console.warn("Geolocation is not supported by this browser.");
+                // }
 
             } catch (e) { 
                 console.error(e);
