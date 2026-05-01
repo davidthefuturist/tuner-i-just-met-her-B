@@ -1,0 +1,227 @@
+<!-- Terminal Command For Pushing to Public Facing Repo: -->
+
+<!-- Commit it to local feature/ble-remote branch
+
+SAVE THEN:
+
+git add web
+git commit -m "Whooops. Gotta push here too"
+git subtree push --prefix web public main 
+
+-->
+
+<!-- This goes into Squarespace Block -->
+ <!-- Nevermind. Github page it is -->
+
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+    <title>VESC Fleet Tuner</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #121212; color: #fff; padding: 20px; text-align: center; }
+        .container { max-width: 500px; margin: auto; border: 1px solid #333; padding: 20px; border-radius: 15px; background: #1a1a1a; }
+        .status { padding: 10px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ff4444; color: #ff4444; font-size: 12px; font-weight: bold; }
+        .connected { border-color: #44ff44; color: #44ff44; }
+        
+        .diag-box { background: #222; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: left; }
+        .diag-box h3 { margin-top: 0; color: #44ff44; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .diag-item { margin: 5px 0; font-size: 13px; color: #aaa; display: flex; justify-content: space-between;}
+        .diag-val { color: #fff; font-weight: bold; font-family: monospace; font-size: 14px;}
+
+        table { width: 100%; border-collapse: collapse; background: #000; border-radius: 10px; margin-bottom: 20px; }
+        th, td { padding: 12px; border: 1px solid #222; text-align: center; }
+        th { font-size: 10px; color: #44ff44; text-transform: uppercase; }
+        .metric-label { text-align: left; color: #888; font-size: 11px; font-weight: bold; width: 80px; }
+        .val-text { font-family: monospace; font-weight: bold; font-size: 16px; }
+
+        section { text-align: left; margin-bottom: 15px; }
+        label { font-size: 11px; color: #aaa; font-weight: bold; text-transform: uppercase; }
+        
+        select, input { 
+            width: 100%; box-sizing: border-box; padding: 14px; border-radius: 8px; 
+            border: 1px solid #333; background: #000; color: #fff; font-size: 16px; 
+            margin-top: 5px; outline: none; 
+            -webkit-appearance: none;
+            appearance: none; 
+        }
+        input:focus, select:focus { border-color: #44ff44; }
+        
+        .btn { width: 100%; padding: 16px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        .connect-btn { background: #44ff44; color: #000; }
+        .stop-btn { background: #ff4444; color: #fff; font-size: 20px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>VESC Fleet Tuner</h2>
+        <div id="status" class="status">DISCONNECTED</div>
+        
+        <div id="remoteDiag" class="diag-box" style="display:none;">
+            <h3>Remote Hardware Diagnostics</h3>
+            <div class="diag-item">Link Status: <span id="remState" class="diag-val" style="color: #ff4444;">DISCONNECTED</span></div>
+            <div class="diag-item">Raw Throttle: <span id="remThrot" class="diag-val">0</span></div>
+            <div class="diag-item">Trigger (Deadman): <span id="remTrig" class="diag-val">OPEN</span></div>
+            <div class="diag-item">Main Button: <span id="remBtn" class="diag-val">OPEN</span></div>
+        </div>
+
+        <div id="telemetry" style="display:none; overflow-x: auto;">
+            <table>
+                <tr id="idRow"><td class="metric-label">VESC ID</td></tr>
+                <tr id="rpmRow"><td class="metric-label">ERPM</td></tr>
+                <tr id="curRow"><td class="metric-label">CURRENT</td></tr>
+                <tr id="dutyRow"><td class="metric-label">ACTUAL DUTY</td></tr>
+            </table>
+        </div>
+
+        <button id="connectBtn" class="btn connect-btn">SEARCH FOR CONTROLLER</button>
+
+        <div id="controls" style="display:none;">
+            
+            <section>
+                <label>Input Source</label>
+                <select id="sourceSelect">
+                    <option value="0">Web Override (Input Box)</option>
+                    <option value="1">BLE Remote</option>
+                </select>
+            </section>
+
+            <section>
+                <label>State of Charge (SOC) Display Source</label>
+                <select id="socSourceSelect">
+                    <option value="0">Manual Testing Override</option>
+                    <option value="1">VESC / BMS Data (WIP)</option>
+                </select>
+            </section>
+
+            <section><label>Manual SOC Injection (%)</label><input type="number" id="socIn" value="100" min="0" max="100"></section>
+
+            <section>
+                <label>Control Mode</label>
+                <select id="modeSelect">
+                    <option value="0">Current (Torque)</option>
+                    <option value="1">RPM (Speed)</option>
+                </select>
+            </section>
+
+            <section><label>Drive Input (-384 to 384)</label><input type="number" id="driveIn" value="0" min="-384" max="384"></section>
+            <section><label>Deadband (+/- Raw Value)</label><input type="number" id="dbandIn" value="15"></section>
+            
+            <section><label>Current Limit (A)</label><input type="number" id="climIn" value="20"></section>
+            <section><label>Regen Limit (A)</label><input type="number" id="rlimIn" value="10"></section>
+            <section><label>RPM Limit (ERPM)</label><input type="number" id="mlimIn" value="15000"></section>
+            
+            <button class="btn stop-btn" id="stopBtn">EMERGENCY STOP</button>
+        </div>
+    </div>
+
+    <script>
+        let cmdChar, readChar;
+        
+        // Do not use hex integers. Bluefy's Swift bridge requires full strings.
+        const SERVICE_UUID = "00001234-0000-1000-8000-00805f9b34fb";
+        const CMD_UUID     = "00005678-0000-1000-8000-00805f9b34fb";
+        const READ_UUID    = "00009abc-0000-1000-8000-00805f9b34fb";
+
+        document.getElementById('connectBtn').addEventListener('click', async () => {
+            try {
+                // The Ultimate Bluefy Bypass
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: [SERVICE_UUID] 
+                });
+                
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                cmdChar = await service.getCharacteristic(CMD_UUID);
+                readChar = await service.getCharacteristic(READ_UUID);
+
+                await readChar.startNotifications();
+                
+                // RESTORED LOGIC: Listen for the telemetry string from the ESP32
+                readChar.addEventListener('characteristicvaluechanged', (e) => {
+                    const str = new TextDecoder().decode(e.target.value);
+                    const reports = str.split('|');
+                    
+                    reports.forEach(report => {
+                        if(!report) return;
+
+                        if (report.startsWith('R:')) {
+                            const parts = report.split(':');
+                            const isConnected = parts[1] === '1';
+                            const stateEl = document.getElementById('remState');
+                            stateEl.innerText = isConnected ? "CONNECTED" : "DISCONNECTED";
+                            stateEl.style.color = isConnected ? "#44ff44" : "#ff4444";
+                            document.getElementById('remThrot').innerText = parts[2];
+                            document.getElementById('remTrig').innerText = parts[3] === '1' ? "PULLED" : "OPEN";
+                            document.getElementById('remBtn').innerText = parts[4] === '1' ? "PRESSED" : "OPEN";
+                            return;
+                        }
+
+                        if (report.startsWith('V')) {
+                            const parts = report.split(':');
+                            const id = parts[0].substring(1);
+                            const rpm = parts[1];
+                            const cur = parts[2];
+                            const duty = parts[3];
+                            
+                            // Dynamically build the table if a new VESC ID appears
+                            if(!document.getElementById(`head-${id}`)) {
+                                document.getElementById('idRow').insertAdjacentHTML('beforeend', `<th id="head-${id}">${id}</th>`);
+                                document.getElementById('rpmRow').insertAdjacentHTML('beforeend', `<td id="rpm-${id}" class="val-text">0</td>`);
+                                document.getElementById('curRow').insertAdjacentHTML('beforeend', `<td id="cur-${id}" class="val-text" style="color:#44bbff">0.0</td>`);
+                                document.getElementById('dutyRow').insertAdjacentHTML('beforeend', `<td id="duty-${id}" class="val-text" style="color:#ffbb44">0.0%</td>`);
+                            }
+                            document.getElementById(`rpm-${id}`).innerText = Math.round(rpm);
+                            document.getElementById(`cur-${id}`).innerText = cur;
+                            document.getElementById(`duty-${id}`).innerText = duty + "%";
+                        }
+                    });
+                });
+
+                // RESTORED LOGIC: Unhide the UI elements upon successful connection
+                document.getElementById('status').innerText = "CONNECTED";
+                document.getElementById('status').className = "status connected";
+                document.getElementById('connectBtn').style.display = "none";
+                document.getElementById('remoteDiag').style.display = "block";
+                document.getElementById('controls').style.display = "block";
+                document.getElementById('telemetry').style.display = "block";
+
+            } catch (e) { 
+                console.error(e);
+                const errorMsg = e.message ? e.message : (e === 2 ? "Error 2: Bluefy rejected the Bluetooth parameters." : e);
+                alert(`Connection Failed: ${errorMsg}`); 
+            }
+        });
+
+        async function send(type, val) {
+            if (!cmdChar) return;
+            await cmdChar.writeValue(new TextEncoder().encode(`${type}:${val}`));
+        }
+
+        const setup = (id, type) => {
+            document.getElementById(id).addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { send(type, e.target.value); e.target.blur(); }
+            });
+        };
+
+        // UI Event Listeners
+        document.getElementById('sourceSelect').addEventListener('change', (e) => send('SRC', e.target.value));
+        document.getElementById('modeSelect').addEventListener('change', (e) => send('MODE', e.target.value));
+        document.getElementById('socSourceSelect').addEventListener('change', (e) => send('SSRC', e.target.value));
+        
+        setup('socIn', 'SVAL');
+        setup('driveIn', 'DRIVE'); 
+        setup('dbandIn', 'DEAD'); 
+        setup('climIn', 'CLIM'); 
+        setup('rlimIn', 'RLIM'); 
+        setup('mlimIn', 'MLIM');
+
+        document.getElementById('stopBtn').addEventListener('click', () => { 
+            document.getElementById('driveIn').value = 0; 
+            send('DRIVE', 0); 
+        });
+    </script>
+</body>
+</html>
