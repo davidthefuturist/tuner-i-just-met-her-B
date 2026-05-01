@@ -253,7 +253,7 @@ git subtree push --prefix web public main
                                 const ms = pad(Math.floor(wallUsec / 1000), 3);
                                 document.getElementById('latWallClock').innerText =
                                     `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ` +
-                                    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${ms} UTC`;
+                                    `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${ms}`;
                             }
                             // t0 / t2 wall-clock (parts[10], parts[11]) — JS Number is fine: epoch µs ≈ 1.78e15, well below 2^53
                             let t0Wall = null, t2Wall = null;
