@@ -178,9 +178,9 @@ git subtree push --prefix web public main
         let autoLogPostedN  = 0;
         let autoLogFailedN  = 0;
 
-        // Cache of most recent VESC fleet readings, keyed by VESC ID.
-        // Populated on every 'V' packet, drained by the Copy Stats button.
-        const lastVescSnapshot = {};
+        // // Cache of most recent VESC fleet readings, keyed by VESC ID.
+        // // Populated on every 'V' packet, drained by the Copy Stats button.
+        // const lastVescSnapshot = {};
         
         // Do not use hex integers. Bluefy's Swift bridge requires full strings.
         const SERVICE_UUID = "00001234-0000-1000-8000-00805f9b34fb";
