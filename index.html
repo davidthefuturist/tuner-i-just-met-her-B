@@ -327,19 +327,19 @@ git subtree push --prefix web public main
                 send('TIME', nowUnixSec);
 
                 // --- START GPS TRACKING ---
-                // if ('geolocation' in navigator) {
-                //     navigator.geolocation.watchPosition(
-                //         (pos) => {
-                //             currentLat = pos.coords.latitude.toFixed(6);
-                //             currentLon = pos.coords.longitude.toFixed(6);
-                //             currentAlt = pos.coords.altitude ? pos.coords.altitude.toFixed(2) : '';
-                //         },
-                //         (err) => console.warn("GPS Error: ", err.message),
-                //         { enableHighAccuracy: true, maximumAge: 2000 }
-                //     );
-                // } else {
-                //     console.warn("Geolocation is not supported by this browser.");
-                // }
+                if ('geolocation' in navigator) {
+                    navigator.geolocation.watchPosition(
+                        (pos) => {
+                            currentLat = pos.coords.latitude.toFixed(6);
+                            currentLon = pos.coords.longitude.toFixed(6);
+                            currentAlt = pos.coords.altitude ? pos.coords.altitude.toFixed(2) : '';
+                        },
+                        (err) => console.warn("GPS Error: ", err.message),
+                        { enableHighAccuracy: true, maximumAge: 2000 }
+                    );
+                } else {
+                    console.warn("Geolocation is not supported by this browser.");
+                }
 
             } catch (e) { 
                 console.error(e);
@@ -454,8 +454,8 @@ git subtree push --prefix web public main
                     `Wall clock at sample: ${s.wall_now ?? 'n/a'}`,
                     `GPS:                  ${currentLat ? `${currentLat}, ${currentLon} (Alt: ${currentAlt}m)` : 'Acquiring...'}`,
                     `Drive Input:         ${rawThrottleVal}`,
-                    `VESC 1:               ${v1id ? \`id=\${v1id} erpm=\${v1.erpm} I=\${v1.current}A duty=\${v1.duty}%\` : 'none'}`,
-                    `VESC 2:               ${v2id ? \`id=\${v2id} erpm=\${v2.erpm} I=\${v2.current}A duty=\${v2.duty}%\` : 'none'}`,
+                    `VESC 1:               ${v1id ? `id=${v1id} erpm=${v1.erpm} I=${v1.current}A duty=${v1.duty}%` : 'none'}`,
+                    `VESC 2:               ${v2id ? `id=${v2id} erpm=${v2.erpm} I=${v2.current}A duty=${v2.duty}%` : 'none'}`,
                     ``,
                     tsvHeader,
                     tsvRow,
