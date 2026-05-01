@@ -148,6 +148,10 @@ git subtree push --prefix web public main
         // Used by the Copy Stats button to dump a clean report.
         let lastLatencySnapshot = null;
         const sessionStartMs = Date.now();
+
+        // Cache of most recent VESC fleet readings, keyed by VESC ID.
+        // Populated on every 'V' packet, drained by the Copy Stats button.
+        const lastVescSnapshot = {};
         
         // Do not use hex integers. Bluefy's Swift bridge requires full strings.
         const SERVICE_UUID = "00001234-0000-1000-8000-00805f9b34fb";
@@ -265,6 +269,9 @@ git subtree push --prefix web public main
                             document.getElementById(`rpm-${id}`).innerText = Math.round(rpm);
                             document.getElementById(`cur-${id}`).innerText = cur;
                             document.getElementById(`duty-${id}`).innerText = duty + "%";
+
+                            // Stash structured snapshot for the Copy button
+                            lastVescSnapshot[id] = { erpm: rpm, current: cur, duty: duty };
                         }
                     });
                 });
@@ -354,10 +361,29 @@ git subtree push --prefix web public main
 
                 // Human-readable block + TSV row separated by a blank line.
                 // The TSV row pastes cleanly into Excel/Sheets as a single row.
-                const tsvHeader = ['received_at','samples','min_us','max_us','avg_us','last_us','t0_wall','t2_wall','wall_now'].join('\t');
+                // Grab drive input straight from the text box
+                const driveInVal = document.getElementById('driveIn').value || '0';
+
+                // Snapshot up to 2 VESCs in deterministic order (sorted by ID)
+                const vescIds = Object.keys(lastVescSnapshot).sort((a, b) => Number(a) - Number(b));
+                const v1id = vescIds[0] ?? '';
+                const v2id = vescIds[1] ?? '';
+                const v1 = v1id ? lastVescSnapshot[v1id] : null;
+                const v2 = v2id ? lastVescSnapshot[v2id] : null;
+
+                const tsvHeader = [
+                    'received_at','samples','min_us','max_us','avg_us','last_us','t0_wall','t2_wall','wall_now',
+                    'drive_input',
+                    'vesc1_id','vesc1_erpm','vesc1_current','vesc1_duty',
+                    'vesc2_id','vesc2_erpm','vesc2_current','vesc2_duty'
+                ].join('\t');
+
                 const tsvRow = [
                     s.received_at, s.samples, s.min_us, s.max_us, s.avg_us,
-                    s.last_us ?? '', s.t0_wall ?? '', s.t2_wall ?? '', s.wall_now ?? ''
+                    s.last_us ?? '', s.t0_wall ?? '', s.t2_wall ?? '', s.wall_now ?? '',
+                    driveInVal,
+                    v1id, v1?.erpm ?? '', v1?.current ?? '', v1?.duty ?? '',
+                    v2id, v2?.erpm ?? '', v2?.current ?? '', v2?.duty ?? ''
                 ].join('\t');
 
                 const text = [
@@ -372,6 +398,9 @@ git subtree push --prefix web public main
                     `t0 (BLE arrival):     ${s.t0_wall ?? 'n/a'}`,
                     `t2 (CAN dispatch):    ${s.t2_wall ?? 'n/a'}`,
                     `Wall clock at sample: ${s.wall_now ?? 'n/a'}`,
+                    `Drive Input:          ${driveInVal}`,
+                    `VESC 1:               ${v1id ? `id=${v1id} erpm=${v1.erpm} I=${v1.current}A duty=${v1.duty}%` : 'none'}`,
+                    `VESC 2:               ${v2id ? `id=${v2id} erpm=${v2.erpm} I=${v2.current}A duty=${v2.duty}%` : 'none'}`,
                     ``,
                     tsvHeader,
                     tsvRow,
