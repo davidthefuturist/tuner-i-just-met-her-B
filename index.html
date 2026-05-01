@@ -91,6 +91,24 @@ git subtree push --prefix web public main
             <div id="latCopyStatus" style="font-size:11px; color:#44ff44; margin-top:6px; min-height:14px; text-align:center;"></div>
         </div>
 
+        <div id="autoLogBox" class="diag-box" style="display:none;">
+            <h3>Auto-Log to Sheet</h3>
+            <div class="diag-item" style="flex-direction:column; align-items:stretch;">
+                <span style="color:#888; font-size:11px;">Session Note (auto-attached to every row)</span>
+                <input type="text" id="autoLogNote" placeholder="e.g. bench test, 60A limit, fresh battery" style="margin-top:4px;">
+            </div>
+            <div class="diag-item" style="flex-direction:column; align-items:stretch;">
+                <span style="color:#888; font-size:11px;">Interval (seconds, 1–60)</span>
+                <input type="number" id="autoLogInterval" value="5" min="1" max="60" style="margin-top:4px;">
+            </div>
+            <div class="diag-item">
+                <span style="color:#aaa;">Posted: <span id="autoLogPosted" class="diag-val" style="color:#44ff44;">0</span></span>
+                <span style="color:#aaa;">Failed: <span id="autoLogFailed" class="diag-val" style="color:#ff8844;">0</span></span>
+            </div>
+            <button class="btn" id="autoLogToggleBtn" style="background:#44ff44; color:#000; margin-top:10px;">START AUTO-LOG</button>
+            <div id="autoLogStatus" style="font-size:11px; color:#888; margin-top:6px; min-height:14px; text-align:center;">Idle</div>
+        </div>
+
         <div id="telemetry" style="display:none; overflow-x: auto;">
             <table>
                 <tr id="idRow"><td class="metric-label">VESC ID</td></tr>
@@ -148,6 +166,17 @@ git subtree push --prefix web public main
         // Used by the Copy Stats button to dump a clean report.
         let lastLatencySnapshot = null;
         const sessionStartMs = Date.now();
+
+        // Cache of most recent VESC fleet readings, keyed by VESC ID.
+        const lastVescSnapshot = {};
+
+        // --- AUTO-LOG CONFIG ---
+        // Paste your Apps Script Web App URL here (the same one your Siri Shortcut posts to)
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbydv66XeoWk45Kin7D-6cAgUmsw_SSPqJ7mLEicfYXfYBnKcRCYOYxldmJBUS_eOLW74g/exec';
+
+        let autoLogTimerId  = null;
+        let autoLogPostedN  = 0;
+        let autoLogFailedN  = 0;
 
         // Cache of most recent VESC fleet readings, keyed by VESC ID.
         // Populated on every 'V' packet, drained by the Copy Stats button.
@@ -282,6 +311,7 @@ git subtree push --prefix web public main
                 document.getElementById('connectBtn').style.display = "none";
                 document.getElementById('remoteDiag').style.display = "block";
                 document.getElementById('latencyDiag').style.display = "block";
+                document.getElementById('autoLogBox').style.display = "block";
                 document.getElementById('controls').style.display = "block";
                 document.getElementById('telemetry').style.display = "block";
 
@@ -351,20 +381,16 @@ git subtree push --prefix web public main
                 return ok;
             };
 
-            document.getElementById('latCopyBtn').addEventListener('click', async () => {
-                if (!lastLatencySnapshot) {
-                    flashCopyStatus('No latency data yet — wait for a sample.', '#ff8844');
-                    return;
-                }
+            // Builds the full snapshot text (human block + TSV header + TSV row + Note line).
+            // noteOverride: optional string. If provided, the snapshot ends with "Note: <text>".
+            // If not provided, ends with "Note: " (blank, for user to fill in after pasting).
+            function buildSnapshotText(noteOverride) {
+                if (!lastLatencySnapshot) return null;
                 const s = lastLatencySnapshot;
                 const sessionDurSec = ((Date.now() - sessionStartMs) / 1000).toFixed(1);
 
-                // Human-readable block + TSV row separated by a blank line.
-                // The TSV row pastes cleanly into Excel/Sheets as a single row.
-                // Grab drive input straight from the text box
                 const driveInVal = document.getElementById('driveIn').value || '0';
 
-                // Snapshot up to 2 VESCs in deterministic order (sorted by ID)
                 const vescIds = Object.keys(lastVescSnapshot).sort((a, b) => Number(a) - Number(b));
                 const v1id = vescIds[0] ?? '';
                 const v2id = vescIds[1] ?? '';
@@ -386,7 +412,11 @@ git subtree push --prefix web public main
                     v2id, v2?.erpm ?? '', v2?.current ?? '', v2?.duty ?? ''
                 ].join('\t');
 
-                const text = [
+                const noteLine = (typeof noteOverride === 'string')
+                    ? `Note: ${noteOverride}`
+                    : `Note: `;
+
+                return [
                     `VESC Fleet Tuner — Latency Snapshot`,
                     `Captured (browser):   ${s.received_at}`,
                     `Session duration:     ${sessionDurSec} s`,
@@ -405,8 +435,16 @@ git subtree push --prefix web public main
                     tsvHeader,
                     tsvRow,
                     ``,
-                    `Note: `
+                    noteLine
                 ].join('\n');
+            }
+
+            document.getElementById('latCopyBtn').addEventListener('click', async () => {
+                const text = buildSnapshotText();  // no override → empty Note: line for user to fill
+                if (!text) {
+                    flashCopyStatus('No latency data yet — wait for a sample.', '#ff8844');
+                    return;
+                }
 
                 let ok = false;
                 try {
@@ -417,13 +455,80 @@ git subtree push --prefix web public main
                         ok = fallbackCopy(text);
                     }
                 } catch (e) {
-                    // Some WebViews reject clipboard API even when it exists; try fallback.
                     ok = fallbackCopy(text);
                 }
 
-                if (ok) flashCopyStatus(`Copied ${s.samples} samples to clipboard`, '#44ff44');
+                if (ok) flashCopyStatus(`Copied ${lastLatencySnapshot.samples} samples to clipboard`, '#44ff44');
                 else    flashCopyStatus('Copy failed — check browser permissions', '#ff4444');
             });
+
+            // --- AUTO-LOG TIMER ---
+        async function postSnapshotToScript() {
+            if (APPS_SCRIPT_URL === 'PASTE_YOUR_WEB_APP_URL_HERE' || !APPS_SCRIPT_URL) {
+                document.getElementById('autoLogStatus').innerText = 'Apps Script URL not configured';
+                document.getElementById('autoLogStatus').style.color = '#ff4444';
+                return;
+            }
+            const note = document.getElementById('autoLogNote').value || '';
+            const text = buildSnapshotText(note);
+            if (!text) {
+                // No latency sample yet — skip silently, try again next tick
+                return;
+            }
+            try {
+                // text/plain + no-cors avoids preflight and lets the request through to Apps Script
+                // even though Apps Script doesn't set CORS response headers. Response is opaque.
+                await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                    body: text
+                });
+                autoLogPostedN++;
+                document.getElementById('autoLogPosted').innerText = autoLogPostedN;
+                const ts = new Date().toLocaleTimeString();
+                const stEl = document.getElementById('autoLogStatus');
+                stEl.style.color = '#44ff44';
+                stEl.innerText = `Last post: ${ts}`;
+            } catch (err) {
+                autoLogFailedN++;
+                document.getElementById('autoLogFailed').innerText = autoLogFailedN;
+                const stEl = document.getElementById('autoLogStatus');
+                stEl.style.color = '#ff4444';
+                stEl.innerText = `Post failed: ${err.message || err}`;
+            }
+        }
+
+        document.getElementById('autoLogToggleBtn').addEventListener('click', () => {
+            const btn = document.getElementById('autoLogToggleBtn');
+            const stEl = document.getElementById('autoLogStatus');
+
+            if (autoLogTimerId === null) {
+                // Start
+                const intervalSec = Math.max(1, Math.min(60, parseInt(document.getElementById('autoLogInterval').value, 10) || 5));
+                document.getElementById('autoLogInterval').value = intervalSec;  // clamp display
+                postSnapshotToScript();  // immediate first post
+                autoLogTimerId = setInterval(postSnapshotToScript, intervalSec * 1000);
+                btn.innerText = 'STOP AUTO-LOG';
+                btn.style.background = '#ff4444';
+                btn.style.color = '#fff';
+                stEl.style.color = '#44ff44';
+                stEl.innerText = `Logging every ${intervalSec}s…`;
+            } else {
+                // Stop
+                clearInterval(autoLogTimerId);
+                autoLogTimerId = null;
+                btn.innerText = 'START AUTO-LOG';
+                btn.style.background = '#44ff44';
+                btn.style.color = '#000';
+                stEl.style.color = '#888';
+                stEl.innerText = 'Stopped';
+            }
+        });
+
+
+
+
     </script>
 </body>
 </html>
