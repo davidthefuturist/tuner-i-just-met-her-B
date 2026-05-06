@@ -192,8 +192,12 @@ git subtree push --prefix web public main
             <div class="diag-item">Avg: (µs) <span id="latAvg" class="diag-val" style="color:#44bbff;">--</span></div>
             <div class="diag-item">Samples: <span id="latCount" class="diag-val">0</span></div>
             <div style="display:flex; gap:8px; margin-top:10px;" class="lockable">
-                <button class="btn" id="latCopyBtn" style="background:#44bbff; color:#000; margin-top:0; flex:1;">COPY STATS</button>
+                <!-- <button class="btn" id="latCopyBtn" style="background:#44bbff; color:#000; margin-top:0; flex:1;">COPY STATS</button> -->
                 <button class="btn" id="latResetBtn" style="background:#444; color:#fff; margin-top:0; flex:1;">RESET STATS</button>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:10px;">
+                <button class="btn" id="latCopyBtn" style="background:#44bbff; color:#000; margin-top:0; flex:1;">COPY STATS</button>
+                <!-- <button class="btn" id="latResetBtn" style="background:#444; color:#fff; margin-top:0; flex:1;">RESET STATS</button> -->
             </div>
             <div id="latCopyStatus" style="font-size:11px; color:#44ff44; margin-top:6px; min-height:14px; text-align:center;"></div>
         </div>
