@@ -898,6 +898,11 @@ git subtree push --prefix web public main
 
         let holdRafId    = null;
         let holdStartMs  = 0;
+        // When a hold completes successfully, iOS still dispatches a 'click' on
+        // pointerup since the same finger is still on the button. Without this
+        // flag, that click would re-lock immediately. We set the flag when the
+        // hold completes and the click handler reads-and-clears it to no-op.
+        let suppressNextClick = false;
 
         function setLock(locked) {
             isLocked = locked;
@@ -930,8 +935,10 @@ git subtree push --prefix web public main
             const pct = Math.min(100, (elapsed / HOLD_DURATION_MS) * 100);
             lockHoldFill.style.width = pct + '%';
             if (elapsed >= HOLD_DURATION_MS) {
-                // Hold complete — unlock and reset.
+                // Hold complete — unlock, then arm the click suppression so the
+                // upcoming pointerup→click doesn't immediately re-lock.
                 cancelHold();
+                suppressNextClick = true;
                 setLock(false);
                 return;
             }
@@ -946,13 +953,18 @@ git subtree push --prefix web public main
             holdRafId = requestAnimationFrame(tickHold);
         }
 
-        // --- Locking: simple click (only fires when unlocked, since holding while
-        //     locked steals the tap via pointerdown→pointerup chain. iOS still
-        //     dispatches click on tap when no hold completed.)
+        // --- Locking: simple click. Two cases swallow the click without locking:
+        //     (1) currently locked + user briefly tapped (hold didn't complete)
+        //     (2) hold just completed; the synthetic click from pointerup must be ignored
         lockBtn.addEventListener('click', (e) => {
+            if (suppressNextClick) {
+                suppressNextClick = false;
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
             if (isLocked) {
-                // We get here only if the user tapped briefly (hold didn't complete).
-                // Don't toggle — they need to actually hold.
+                // Brief tap while locked — they need to actually hold.
                 return;
             }
             setLock(true);
@@ -961,17 +973,14 @@ git subtree push --prefix web public main
         // --- Hold-to-unlock: pointer events cover both touch and mouse.
         //     Using pointer events instead of touch+mouse separately avoids double-firing.
         lockBtn.addEventListener('pointerdown', (e) => {
-            // Only initiate hold-to-unlock when locked. When unlocked, let the click
-            // handler do its thing on pointerup.
             if (isLocked) startHold();
         });
-        // Releasing, leaving the button, or cancelling the gesture all abort the hold.
+        // Releasing, leaving, or cancelling all abort the hold (if still in progress).
         ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => {
             lockBtn.addEventListener(ev, () => {
                 if (isLocked && holdStartMs > 0) cancelHold();
             });
         });
-        // Belt-and-suspenders for iOS Safari, which can be inconsistent with pointer events.
         lockBtn.addEventListener('touchcancel', () => {
             if (isLocked && holdStartMs > 0) cancelHold();
         });
