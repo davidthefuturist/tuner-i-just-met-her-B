@@ -21,7 +21,7 @@ git subtree push --prefix web public main
     <title>VESC Fleet Tuner</title>
     <style>
         body { font-family: -apple-system, sans-serif; background: #121212; color: #fff; padding: 20px; text-align: center; }
-        .container { max-width: 500px; margin: auto; border: 1px solid #333; padding: 20px; border-radius: 15px; background: #1a1a1a; }
+        .container { max-width: 500px; margin: auto; border: 1px solid #333; padding: 20px; border-radius: 15px; background: #1a1a1a; position: relative; }
         .status { padding: 10px; margin-bottom: 20px; border-radius: 8px; border: 1px solid #ff4444; color: #ff4444; font-size: 12px; font-weight: bold; }
         .connected { border-color: #44ff44; color: #44ff44; }
         
@@ -51,6 +51,95 @@ git subtree push --prefix web public main
         .btn { width: 100%; padding: 16px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; font-size: 16px; margin-top: 10px; }
         .connect-btn { background: #44ff44; color: #000; }
         .stop-btn { background: #ff4444; color: #fff; font-size: 20px; margin-top: 20px; }
+
+        /* --- PHOTO GALLERY --- */
+        .photo-strip {
+            display: flex; gap: 8px; overflow-x: auto; padding: 8px 0;
+            -webkit-overflow-scrolling: touch;
+        }
+        .photo-strip::-webkit-scrollbar { height: 6px; }
+        .photo-strip::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .photo-thumb {
+            flex: 0 0 auto; width: 80px; height: 80px; border-radius: 8px;
+            background-size: cover; background-position: center;
+            border: 2px solid #333; cursor: pointer; position: relative;
+        }
+        .photo-thumb.uploaded { border-color: #44ff44; }
+        .photo-thumb .badge {
+            position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.7);
+            color: #44ff44; font-size: 9px; padding: 1px 4px; border-radius: 3px;
+            font-weight: bold;
+        }
+        .photo-empty {
+            color: #666; font-size: 12px; text-align: center; padding: 20px 0;
+            font-style: italic;
+        }
+        .add-photo-btn {
+            background: #444; color: #fff; padding: 10px; font-size: 13px;
+            border-radius: 8px; border: 1px dashed #666; width: 100%;
+            margin-top: 8px; cursor: pointer; font-weight: bold;
+        }
+
+        /* --- PHOTO VIEWER MODAL --- */
+        .viewer {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.95); z-index: 9999;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .viewer.active { display: flex; }
+        .viewer img {
+            max-width: 100%; max-height: 75vh; border-radius: 8px;
+            object-fit: contain;
+        }
+        .viewer-controls {
+            display: flex; gap: 10px; margin-top: 15px; width: 100%; max-width: 500px;
+        }
+        .viewer-controls button {
+            flex: 1; padding: 14px; border-radius: 8px; border: none;
+            font-weight: bold; font-size: 14px; cursor: pointer;
+        }
+        .viewer-nav {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            background: rgba(255,255,255,0.1); color: #fff; border: none;
+            font-size: 32px; padding: 10px 18px; cursor: pointer; border-radius: 8px;
+            user-select: none;
+        }
+        .viewer-nav.prev { left: 10px; }
+        .viewer-nav.next { right: 10px; }
+        .viewer-counter {
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+            color: #fff; font-size: 14px; font-weight: bold;
+            background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;
+        }
+        .viewer-close {
+            position: absolute; top: 15px; right: 15px;
+            background: rgba(255,255,255,0.15); color: #fff; border: none;
+            width: 40px; height: 40px; border-radius: 20px; font-size: 20px;
+            cursor: pointer; font-weight: bold;
+        }
+
+        /* --- LOCK SYSTEM --- */
+        .lockable.locked {
+            pointer-events: none;
+            opacity: 0.45;
+            filter: grayscale(0.5);
+        }
+        .lock-bar {
+            position: sticky; bottom: 0; left: 0; right: 0; margin: 20px -20px -20px -20px;
+            padding: 14px 20px; background: #1a1a1a;
+            border-top: 1px solid #333;
+            z-index: 100;
+        }
+        .lock-btn {
+            width: 100%; padding: 14px; border-radius: 10px; border: none;
+            font-weight: bold; font-size: 14px; cursor: pointer;
+            background: #333; color: #aaa; letter-spacing: 1px;
+        }
+        .lock-btn.locked-state {
+            background: #ffaa00; color: #000; font-size: 18px;
+            box-shadow: 0 0 20px rgba(255, 170, 0, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -84,14 +173,14 @@ git subtree push --prefix web public main
             <div class="diag-item">Max: (µs) <span id="latMax" class="diag-val" style="color:#ff8844;">--</span></div>
             <div class="diag-item">Avg: (µs) <span id="latAvg" class="diag-val" style="color:#44bbff;">--</span></div>
             <div class="diag-item">Samples: <span id="latCount" class="diag-val">0</span></div>
-            <div style="display:flex; gap:8px; margin-top:10px;">
+            <div style="display:flex; gap:8px; margin-top:10px;" class="lockable">
                 <button class="btn" id="latCopyBtn" style="background:#44bbff; color:#000; margin-top:0; flex:1;">COPY STATS</button>
                 <button class="btn" id="latResetBtn" style="background:#444; color:#fff; margin-top:0; flex:1;">RESET STATS</button>
             </div>
             <div id="latCopyStatus" style="font-size:11px; color:#44ff44; margin-top:6px; min-height:14px; text-align:center;"></div>
         </div>
 
-        <div id="autoLogBox" class="diag-box" style="display:none;">
+        <div id="autoLogBox" class="diag-box lockable" style="display:none;">
             <h3>Auto-Log to Sheet</h3>
             <div class="diag-item" style="flex-direction:column; align-items:stretch;">
                 <span style="color:#888; font-size:11px;">Session Note (auto-attached to every row)</span>
@@ -109,6 +198,20 @@ git subtree push --prefix web public main
             <div id="autoLogStatus" style="font-size:11px; color:#888; margin-top:6px; min-height:14px; text-align:center;">Idle</div>
         </div>
 
+        <!-- ============ PHOTO GALLERY ============ -->
+        <div id="photoBox" class="diag-box" style="display:none;">
+            <h3>Reference Photos (Session)</h3>
+            <div id="photoStrip" class="photo-strip">
+                <div id="photoEmpty" class="photo-empty">No photos yet — tap below to add maps, screenshots, etc.</div>
+            </div>
+            <!-- Lockable wrapper so the Add button is disabled when locked -->
+            <div class="lockable">
+                <input type="file" id="photoInput" accept="image/*" multiple style="display:none;">
+                <button id="addPhotoBtn" class="add-photo-btn">+ ADD PHOTOS</button>
+            </div>
+            <div id="photoStatus" style="font-size:11px; color:#888; margin-top:6px; min-height:14px; text-align:center;"></div>
+        </div>
+
         <div id="telemetry" style="display:none; overflow-x: auto;">
             <table>
                 <tr id="idRow"><td class="metric-label">VESC ID</td></tr>
@@ -120,7 +223,7 @@ git subtree push --prefix web public main
 
         <button id="connectBtn" class="btn connect-btn">SEARCH FOR CONTROLLER</button>
 
-        <div id="controls" style="display:none;">
+        <div id="controls" class="lockable" style="display:none;">
             
             <section>
                 <label>Input Source</label>
@@ -157,6 +260,25 @@ git subtree push --prefix web public main
             
             <button class="btn stop-btn" id="stopBtn">EMERGENCY STOP</button>
         </div>
+
+        <!-- ============ LOCK BAR ============ -->
+        <!-- Sits OUTSIDE .lockable so it stays tappable when locked. -->
+        <div id="lockBar" class="lock-bar" style="display:none;">
+            <button id="lockBtn" class="lock-btn">🔒 LOCK CONTROLS</button>
+        </div>
+    </div>
+
+    <!-- ============ PHOTO VIEWER MODAL ============ -->
+    <div id="photoViewer" class="viewer">
+        <button class="viewer-close" id="viewerClose">✕</button>
+        <div class="viewer-counter" id="viewerCounter">1 / 1</div>
+        <button class="viewer-nav prev" id="viewerPrev">‹</button>
+        <img id="viewerImg" src="" alt="">
+        <button class="viewer-nav next" id="viewerNext">›</button>
+        <div class="viewer-controls">
+            <button id="viewerUpload" style="background:#44bbff; color:#000;">↑ UPLOAD TO SHEET</button>
+            <button id="viewerDelete" style="background:#ff4444; color:#fff;">🗑 DELETE</button>
+        </div>
     </div>
 
     <script>
@@ -182,6 +304,14 @@ git subtree push --prefix web public main
         let currentLat = '';
         let currentLon = '';
         let currentAlt = '';
+
+        // --- PHOTO GALLERY STATE ---
+        // Each photo: { id, url (object URL), file, uploaded: bool, addedAt: ISO string }
+        const photos = [];
+        let viewerIndex = 0;
+
+        // --- LOCK STATE ---
+        let isLocked = false;
 
 
 
@@ -319,8 +449,10 @@ git subtree push --prefix web public main
                 document.getElementById('remoteDiag').style.display = "block";
                 document.getElementById('latencyDiag').style.display = "block";
                 document.getElementById('autoLogBox').style.display = "block";
+                document.getElementById('photoBox').style.display = "block";
                 document.getElementById('controls').style.display = "block";
                 document.getElementById('telemetry').style.display = "block";
+                document.getElementById('lockBar').style.display = "block";
 
                 // Sync ESP32's wall clock to the browser's current Unix time (UTC seconds)
                 const nowUnixSec = Math.floor(Date.now() / 1000);
@@ -551,8 +683,224 @@ git subtree push --prefix web public main
             }
         });
 
+        // ============================================================
+        // ============ PHOTO GALLERY ============
+        // ============================================================
+        const photoInput   = document.getElementById('photoInput');
+        const photoStrip   = document.getElementById('photoStrip');
+        const photoEmpty   = document.getElementById('photoEmpty');
+        const photoStatus  = document.getElementById('photoStatus');
+        const addPhotoBtn  = document.getElementById('addPhotoBtn');
 
+        const viewer        = document.getElementById('photoViewer');
+        const viewerImg     = document.getElementById('viewerImg');
+        const viewerCounter = document.getElementById('viewerCounter');
+        const viewerClose   = document.getElementById('viewerClose');
+        const viewerPrev    = document.getElementById('viewerPrev');
+        const viewerNext    = document.getElementById('viewerNext');
+        const viewerUpload  = document.getElementById('viewerUpload');
+        const viewerDelete  = document.getElementById('viewerDelete');
 
+        const flashPhotoStatus = (msg, color) => {
+            photoStatus.style.color = color || '#44ff44';
+            photoStatus.innerText = msg;
+            setTimeout(() => { photoStatus.innerText = ''; }, 2500);
+        };
+
+        function renderPhotoStrip() {
+            // Remove all thumbnails (keep the empty placeholder around but toggle it)
+            photoStrip.querySelectorAll('.photo-thumb').forEach(el => el.remove());
+
+            if (photos.length === 0) {
+                photoEmpty.style.display = 'block';
+                return;
+            }
+            photoEmpty.style.display = 'none';
+
+            photos.forEach((p, idx) => {
+                const thumb = document.createElement('div');
+                thumb.className = 'photo-thumb' + (p.uploaded ? ' uploaded' : '');
+                thumb.style.backgroundImage = `url("${p.url}")`;
+                thumb.addEventListener('click', () => openViewer(idx));
+                if (p.uploaded) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge';
+                    badge.innerText = '✓';
+                    thumb.appendChild(badge);
+                }
+                photoStrip.appendChild(thumb);
+            });
+        }
+
+        addPhotoBtn.addEventListener('click', () => photoInput.click());
+
+        photoInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files || []);
+            if (files.length === 0) return;
+            files.forEach(file => {
+                photos.push({
+                    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    file: file,
+                    url: URL.createObjectURL(file),
+                    uploaded: false,
+                    addedAt: new Date().toISOString()
+                });
+            });
+            renderPhotoStrip();
+            flashPhotoStatus(`Added ${files.length} photo${files.length === 1 ? '' : 's'}`);
+            // Reset input so picking the same file again still fires 'change'
+            photoInput.value = '';
+        });
+
+        function openViewer(idx) {
+            if (idx < 0 || idx >= photos.length) return;
+            viewerIndex = idx;
+            updateViewer();
+            viewer.classList.add('active');
+        }
+
+        function closeViewer() {
+            viewer.classList.remove('active');
+        }
+
+        function updateViewer() {
+            const p = photos[viewerIndex];
+            if (!p) {
+                closeViewer();
+                return;
+            }
+            viewerImg.src = p.url;
+            viewerCounter.innerText = `${viewerIndex + 1} / ${photos.length}`;
+            viewerUpload.innerText = p.uploaded ? '✓ UPLOADED' : '↑ UPLOAD TO SHEET';
+            viewerUpload.disabled  = p.uploaded;
+            viewerUpload.style.opacity = p.uploaded ? '0.5' : '1';
+        }
+
+        viewerClose.addEventListener('click', closeViewer);
+
+        // Click outside the image (on the dark backdrop) closes the viewer.
+        viewer.addEventListener('click', (e) => {
+            if (e.target === viewer) closeViewer();
+        });
+
+        viewerPrev.addEventListener('click', () => {
+            if (photos.length === 0) return;
+            viewerIndex = (viewerIndex - 1 + photos.length) % photos.length;
+            updateViewer();
+        });
+
+        viewerNext.addEventListener('click', () => {
+            if (photos.length === 0) return;
+            viewerIndex = (viewerIndex + 1) % photos.length;
+            updateViewer();
+        });
+
+        // Keyboard nav (works on desktop / external keyboards)
+        document.addEventListener('keydown', (e) => {
+            if (!viewer.classList.contains('active')) return;
+            if (e.key === 'Escape')    closeViewer();
+            if (e.key === 'ArrowLeft') viewerPrev.click();
+            if (e.key === 'ArrowRight') viewerNext.click();
+        });
+
+        // Touch swipe nav for mobile
+        let touchStartX = 0;
+        viewer.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].clientX;
+        }, { passive: true });
+        viewer.addEventListener('touchend', (e) => {
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            if (Math.abs(dx) < 50) return;  // ignore tiny taps
+            if (dx > 0) viewerPrev.click(); else viewerNext.click();
+        }, { passive: true });
+
+        viewerDelete.addEventListener('click', () => {
+            const p = photos[viewerIndex];
+            if (!p) return;
+            if (!confirm('Delete this photo from the session?')) return;
+            URL.revokeObjectURL(p.url);
+            photos.splice(viewerIndex, 1);
+            renderPhotoStrip();
+            if (photos.length === 0) {
+                closeViewer();
+            } else {
+                if (viewerIndex >= photos.length) viewerIndex = photos.length - 1;
+                updateViewer();
+            }
+        });
+
+        // Read a File as base64 (data URL → strip prefix)
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload  = () => resolve(String(r.result).split(',')[1] || '');
+                r.onerror = () => reject(new Error('FileReader failed'));
+                r.readAsDataURL(file);
+            });
+        }
+
+        viewerUpload.addEventListener('click', async () => {
+            const p = photos[viewerIndex];
+            if (!p || p.uploaded) return;
+            if (!APPS_SCRIPT_URL) {
+                alert('Apps Script URL not configured');
+                return;
+            }
+            viewerUpload.innerText = 'UPLOADING…';
+            viewerUpload.disabled = true;
+            try {
+                const b64 = await fileToBase64(p.file);
+                const note = document.getElementById('autoLogNote')?.value || '';
+                // Photo payload — distinguished by `type: "photo"` so your Apps Script
+                // can route it to a different sheet / Drive folder.
+                const payload = {
+                    type: 'photo',
+                    filename: p.file.name || `photo-${p.id}.jpg`,
+                    mimeType: p.file.type || 'image/jpeg',
+                    addedAt: p.addedAt,
+                    sentAt: new Date().toISOString(),
+                    note: note,
+                    gps: { lat: currentLat, lon: currentLon, alt: currentAlt },
+                    base64: b64
+                };
+                await fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+                    body: JSON.stringify(payload)
+                });
+                p.uploaded = true;
+                renderPhotoStrip();
+                updateViewer();
+                flashPhotoStatus(`Uploaded ${p.file.name || 'photo'}`);
+            } catch (err) {
+                viewerUpload.innerText = '↑ UPLOAD TO SHEET';
+                viewerUpload.disabled = false;
+                alert(`Upload failed: ${err.message || err}`);
+            }
+        });
+
+        // ============================================================
+        // ============ LOCK SYSTEM ============
+        // ============================================================
+        const lockBtn = document.getElementById('lockBtn');
+
+        function setLock(locked) {
+            isLocked = locked;
+            // Add/remove .locked on every .lockable region
+            document.querySelectorAll('.lockable').forEach(el => {
+                el.classList.toggle('locked', locked);
+            });
+            if (locked) {
+                lockBtn.innerText = '🔓 TAP TO UNLOCK';
+                lockBtn.classList.add('locked-state');
+            } else {
+                lockBtn.innerText = '🔒 LOCK CONTROLS';
+                lockBtn.classList.remove('locked-state');
+            }
+        }
+
+        lockBtn.addEventListener('click', () => setLock(!isLocked));
 
     </script>
 </body>
