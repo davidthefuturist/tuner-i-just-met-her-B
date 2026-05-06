@@ -276,7 +276,7 @@ git subtree push --prefix web public main
         <img id="viewerImg" src="" alt="">
         <button class="viewer-nav next" id="viewerNext">›</button>
         <div class="viewer-controls">
-            <button id="viewerUpload" style="background:#44bbff; color:#000;">↑ UPLOAD TO SHEET</button>
+            <button id="viewerShare" style="background:#44ff44; color:#000;">↗ SHARE PHOTO</button>
             <button id="viewerDelete" style="background:#ff4444; color:#fff;">🗑 DELETE</button>
         </div>
     </div>
@@ -698,7 +698,7 @@ git subtree push --prefix web public main
         const viewerClose   = document.getElementById('viewerClose');
         const viewerPrev    = document.getElementById('viewerPrev');
         const viewerNext    = document.getElementById('viewerNext');
-        const viewerUpload  = document.getElementById('viewerUpload');
+        const viewerShare   = document.getElementById('viewerShare');
         const viewerDelete  = document.getElementById('viewerDelete');
 
         const flashPhotoStatus = (msg, color) => {
@@ -719,15 +719,9 @@ git subtree push --prefix web public main
 
             photos.forEach((p, idx) => {
                 const thumb = document.createElement('div');
-                thumb.className = 'photo-thumb' + (p.uploaded ? ' uploaded' : '');
+                thumb.className = 'photo-thumb';
                 thumb.style.backgroundImage = `url("${p.url}")`;
                 thumb.addEventListener('click', () => openViewer(idx));
-                if (p.uploaded) {
-                    const badge = document.createElement('span');
-                    badge.className = 'badge';
-                    badge.innerText = '✓';
-                    thumb.appendChild(badge);
-                }
                 photoStrip.appendChild(thumb);
             });
         }
@@ -742,7 +736,6 @@ git subtree push --prefix web public main
                     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                     file: file,
                     url: URL.createObjectURL(file),
-                    uploaded: false,
                     addedAt: new Date().toISOString()
                 });
             });
@@ -771,9 +764,6 @@ git subtree push --prefix web public main
             }
             viewerImg.src = p.url;
             viewerCounter.innerText = `${viewerIndex + 1} / ${photos.length}`;
-            viewerUpload.innerText = p.uploaded ? '✓ UPLOADED' : '↑ UPLOAD TO SHEET';
-            viewerUpload.disabled  = p.uploaded;
-            viewerUpload.style.opacity = p.uploaded ? '0.5' : '1';
         }
 
         viewerClose.addEventListener('click', closeViewer);
@@ -829,54 +819,47 @@ git subtree push --prefix web public main
             }
         });
 
-        // Read a File as base64 (data URL → strip prefix)
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const r = new FileReader();
-                r.onload  = () => resolve(String(r.result).split(',')[1] || '');
-                r.onerror = () => reject(new Error('FileReader failed'));
-                r.readAsDataURL(file);
-            });
+        // Build a short caption with session context to prefill the share text.
+        // Apps that support text + file (Messages, Mail) will use both.
+        // Apps that only take one (some chat apps) typically prefer the file.
+        function buildShareText(p) {
+            const note = document.getElementById('autoLogNote')?.value || '';
+            const ts   = new Date().toLocaleTimeString();
+            const gps  = currentLat ? `${currentLat},${currentLon}` : 'no GPS';
+            const noteLine = note ? ` | ${note}` : '';
+            return `[VESC ${ts}] ${gps}${noteLine}`;
         }
 
-        viewerUpload.addEventListener('click', async () => {
+        // Open the native share sheet with the photo as an attachment.
+        // navigator.share() with `files` is supported on iOS Safari/Bluefy 15+ and
+        // triggers the system share UI — Messages, Mail, AirDrop, etc. all appear.
+        viewerShare.addEventListener('click', async () => {
             const p = photos[viewerIndex];
-            if (!p || p.uploaded) return;
-            if (!APPS_SCRIPT_URL) {
-                alert('Apps Script URL not configured');
+            if (!p) return;
+
+            const shareData = {
+                files: [p.file],
+                text:  buildShareText(p),
+                title: `VESC Photo ${p.file.name || ''}`.trim()
+            };
+
+            // Feature-detect: canShare with files isn't supported everywhere.
+            if (!navigator.canShare || !navigator.canShare(shareData)) {
+                flashPhotoStatus('Share not supported on this browser', '#ff4444');
                 return;
             }
-            viewerUpload.innerText = 'UPLOADING…';
-            viewerUpload.disabled = true;
+
             try {
-                const b64 = await fileToBase64(p.file);
-                const note = document.getElementById('autoLogNote')?.value || '';
-                // Photo payload — distinguished by `type: "photo"` so your Apps Script
-                // can route it to a different sheet / Drive folder.
-                const payload = {
-                    type: 'photo',
-                    filename: p.file.name || `photo-${p.id}.jpg`,
-                    mimeType: p.file.type || 'image/jpeg',
-                    addedAt: p.addedAt,
-                    sentAt: new Date().toISOString(),
-                    note: note,
-                    gps: { lat: currentLat, lon: currentLon, alt: currentAlt },
-                    base64: b64
-                };
-                await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-                    body: JSON.stringify(payload)
-                });
-                p.uploaded = true;
-                renderPhotoStrip();
-                updateViewer();
-                flashPhotoStatus(`Uploaded ${p.file.name || 'photo'}`);
+                await navigator.share(shareData);
+                flashPhotoStatus('Shared', '#44ff44');
             } catch (err) {
-                viewerUpload.innerText = '↑ UPLOAD TO SHEET';
-                viewerUpload.disabled = false;
-                alert(`Upload failed: ${err.message || err}`);
+                // AbortError = user dismissed the share sheet; not really a failure.
+                if (err.name === 'AbortError') {
+                    flashPhotoStatus('Share cancelled', '#888');
+                } else {
+                    console.warn('Share failed:', err);
+                    flashPhotoStatus(`Share failed: ${err.message || err.name}`, '#ff4444');
+                }
             }
         });
 
