@@ -135,10 +135,28 @@ git subtree push --prefix web public main
             width: 100%; padding: 14px; border-radius: 10px; border: none;
             font-weight: bold; font-size: 14px; cursor: pointer;
             background: #333; color: #aaa; letter-spacing: 1px;
+            position: relative; overflow: hidden;
+            -webkit-user-select: none; user-select: none;
+            -webkit-touch-callout: none;
         }
         .lock-btn.locked-state {
             background: #ffaa00; color: #000; font-size: 18px;
             box-shadow: 0 0 20px rgba(255, 170, 0, 0.4);
+        }
+        /* Fill bar that grows left→right while user holds. Sits behind the label. */
+        .lock-btn .hold-fill {
+            position: absolute; top: 0; left: 0; bottom: 0;
+            width: 0%;
+            background: rgba(68, 255, 68, 0.55);
+            transition: width 0.05s linear;
+            pointer-events: none;
+        }
+        .lock-btn .hold-label {
+            position: relative; z-index: 1;  /* sit above the fill */
+        }
+        /* When holding, give the whole button a subtle pulse so it feels active */
+        .lock-btn.holding {
+            background: #2a4a2a;
         }
     </style>
 </head>
@@ -264,7 +282,10 @@ git subtree push --prefix web public main
         <!-- ============ LOCK BAR ============ -->
         <!-- Sits OUTSIDE .lockable so it stays tappable when locked. -->
         <div id="lockBar" class="lock-bar" style="display:none;">
-            <button id="lockBtn" class="lock-btn">🔒 LOCK CONTROLS</button>
+            <button id="lockBtn" class="lock-btn">
+                <span class="hold-fill" id="lockHoldFill"></span>
+                <span class="hold-label" id="lockBtnLabel">🔒 LOCK CONTROLS</span>
+            </button>
         </div>
     </div>
 
@@ -864,26 +885,96 @@ git subtree push --prefix web public main
         });
 
         // ============================================================
-        // ============ LOCK SYSTEM ============
+        // ============ LOCK SYSTEM (HOLD TO UNLOCK) ============
         // ============================================================
-        const lockBtn = document.getElementById('lockBtn');
+        // Locking is a single tap (no hold required — locking is safe).
+        // Unlocking requires a sustained press of HOLD_DURATION_MS to prevent
+        // accidental pocket-taps during a ride.
+        const HOLD_DURATION_MS = 1000;  // tweak: longer = harder to accidentally trigger
+
+        const lockBtn       = document.getElementById('lockBtn');
+        const lockBtnLabel  = document.getElementById('lockBtnLabel');
+        const lockHoldFill  = document.getElementById('lockHoldFill');
+
+        let holdRafId    = null;
+        let holdStartMs  = 0;
 
         function setLock(locked) {
             isLocked = locked;
-            // Add/remove .locked on every .lockable region
             document.querySelectorAll('.lockable').forEach(el => {
                 el.classList.toggle('locked', locked);
             });
             if (locked) {
-                lockBtn.innerText = '🔓 TAP TO UNLOCK';
+                lockBtnLabel.innerText = '🔓 HOLD TO UNLOCK';
                 lockBtn.classList.add('locked-state');
             } else {
-                lockBtn.innerText = '🔒 LOCK CONTROLS';
+                lockBtnLabel.innerText = '🔒 LOCK CONTROLS';
                 lockBtn.classList.remove('locked-state');
             }
+            // Reset any in-progress hold animation
+            cancelHold();
         }
 
-        lockBtn.addEventListener('click', () => setLock(!isLocked));
+        function cancelHold() {
+            if (holdRafId !== null) {
+                cancelAnimationFrame(holdRafId);
+                holdRafId = null;
+            }
+            holdStartMs = 0;
+            lockHoldFill.style.width = '0%';
+            lockBtn.classList.remove('holding');
+        }
+
+        function tickHold() {
+            const elapsed = Date.now() - holdStartMs;
+            const pct = Math.min(100, (elapsed / HOLD_DURATION_MS) * 100);
+            lockHoldFill.style.width = pct + '%';
+            if (elapsed >= HOLD_DURATION_MS) {
+                // Hold complete — unlock and reset.
+                cancelHold();
+                setLock(false);
+                return;
+            }
+            holdRafId = requestAnimationFrame(tickHold);
+        }
+
+        function startHold() {
+            // Only meaningful when locked; tapping while unlocked goes through the click handler.
+            if (!isLocked) return;
+            holdStartMs = Date.now();
+            lockBtn.classList.add('holding');
+            holdRafId = requestAnimationFrame(tickHold);
+        }
+
+        // --- Locking: simple click (only fires when unlocked, since holding while
+        //     locked steals the tap via pointerdown→pointerup chain. iOS still
+        //     dispatches click on tap when no hold completed.)
+        lockBtn.addEventListener('click', (e) => {
+            if (isLocked) {
+                // We get here only if the user tapped briefly (hold didn't complete).
+                // Don't toggle — they need to actually hold.
+                return;
+            }
+            setLock(true);
+        });
+
+        // --- Hold-to-unlock: pointer events cover both touch and mouse.
+        //     Using pointer events instead of touch+mouse separately avoids double-firing.
+        lockBtn.addEventListener('pointerdown', (e) => {
+            // Only initiate hold-to-unlock when locked. When unlocked, let the click
+            // handler do its thing on pointerup.
+            if (isLocked) startHold();
+        });
+        // Releasing, leaving the button, or cancelling the gesture all abort the hold.
+        ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => {
+            lockBtn.addEventListener(ev, () => {
+                if (isLocked && holdStartMs > 0) cancelHold();
+            });
+        });
+        // Belt-and-suspenders for iOS Safari, which can be inconsistent with pointer events.
+        lockBtn.addEventListener('touchcancel', () => {
+            if (isLocked && holdStartMs > 0) cancelHold();
+        });
 
     </script>
 </body>
