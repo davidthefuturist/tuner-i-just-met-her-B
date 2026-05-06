@@ -143,6 +143,13 @@ git subtree push --prefix web public main
             background: #ffaa00; color: #000; font-size: 18px;
             box-shadow: 0 0 20px rgba(255, 170, 0, 0.4);
         }
+
+        /* --- AUTO-LOG ACTIVE STATE --- */
+        /* Pale green tint on the page background while auto-logging,
+           so it's obvious at a glance that data is actively being posted. */
+        body.autolog-active {
+            background: #234523;
+        }
         /* Fill bar that grows left→right while user holds. Sits behind the label. */
         .lock-btn .hold-fill {
             position: absolute; top: 0; left: 0; bottom: 0;
@@ -696,6 +703,7 @@ git subtree push --prefix web public main
                 btn.style.color = '#fff';
                 stEl.style.color = '#44ff44';
                 stEl.innerText = `Logging every ${intervalSec}s…`;
+                document.body.classList.add('autolog-active');
             } else {
                 // Stop
                 clearInterval(autoLogTimerId);
@@ -705,6 +713,7 @@ git subtree push --prefix web public main
                 btn.style.color = '#000';
                 stEl.style.color = '#888';
                 stEl.innerText = 'Stopped';
+                document.body.classList.remove('autolog-active');
             }
         });
 
